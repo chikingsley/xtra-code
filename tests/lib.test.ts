@@ -7,8 +7,10 @@ import {
   sessionsToOptions,
   parseSessionsFromDir,
   folderNameToPath,
+  spawnClaude,
   type Session,
   type SessionIndex,
+  type SpawnClaudeDeps,
 } from "../src/lib";
 
 describe("formatRelativeTime", () => {
@@ -291,5 +293,79 @@ describe("parseSessionsFromDir", () => {
     // session-2 has no customTitle, should use firstPrompt
     const session2 = sessions.find(s => s.id === "session-2");
     expect(session2!.title).toBe("Second session prompt");
+  });
+});
+
+describe("spawnClaude", () => {
+  test("returns error when claude not found in PATH", () => {
+    const mockDeps: SpawnClaudeDeps = {
+      which: () => null,
+      spawn: () => {
+        throw new Error("should not be called");
+      },
+    };
+
+    const result = spawnClaude("session-123", "/home/user/project", mockDeps);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain("claude");
+      expect(result.error).toContain("not found");
+    }
+  });
+
+  test("spawns claude with correct arguments when found", () => {
+    let spawnedCmd: string[] = [];
+    let spawnedCwd = "";
+
+    const mockDeps: SpawnClaudeDeps = {
+      which: (cmd) => (cmd === "claude" ? "/usr/local/bin/claude" : null),
+      spawn: (cmd, opts) => {
+        spawnedCmd = cmd;
+        spawnedCwd = opts.cwd;
+        return { exited: Promise.resolve(0) };
+      },
+    };
+
+    const result = spawnClaude("session-abc", "/home/user/myproject", mockDeps);
+
+    expect(result.success).toBe(true);
+    expect(spawnedCmd).toEqual([
+      "/usr/local/bin/claude",
+      "--resume",
+      "session-abc",
+    ]);
+    expect(spawnedCwd).toBe("/home/user/myproject");
+  });
+
+  test("uses the full path from which, not just 'claude'", () => {
+    let spawnedCmd: string[] = [];
+
+    const mockDeps: SpawnClaudeDeps = {
+      which: () => "/some/weird/path/to/claude",
+      spawn: (cmd) => {
+        spawnedCmd = cmd;
+        return { exited: Promise.resolve(0) };
+      },
+    };
+
+    spawnClaude("sess", "/tmp", mockDeps);
+
+    expect(spawnedCmd[0]).toBe("/some/weird/path/to/claude");
+  });
+
+  test("returns the spawn result for awaiting exit code", async () => {
+    const mockDeps: SpawnClaudeDeps = {
+      which: () => "/bin/claude",
+      spawn: () => ({ exited: Promise.resolve(42) }),
+    };
+
+    const result = spawnClaude("sess", "/tmp", mockDeps);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const exitCode = await result.proc.exited;
+      expect(exitCode).toBe(42);
+    }
   });
 });

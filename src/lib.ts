@@ -111,3 +111,54 @@ export function sessionsToOptions(sessions: Session[], now = Date.now()): Select
     description: `${s.project.replace(homedir(), "~")} · ${s.messageCount} msgs · ${formatRelativeTime(s.timestamp, now)}`,
   }));
 }
+
+// Types for dependency injection (enables testing)
+export interface SpawnOptions {
+  cwd: string;
+  stdin: "inherit";
+  stdout: "inherit";
+  stderr: "inherit";
+}
+
+export interface SpawnResult {
+  exited: Promise<number>;
+}
+
+export interface SpawnClaudeDeps {
+  which: (cmd: string) => string | null;
+  spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;
+}
+
+export type SpawnClaudeResult =
+  | { success: true; proc: SpawnResult }
+  | { success: false; error: string };
+
+// Default dependencies use real Bun APIs
+const defaultDeps: SpawnClaudeDeps = {
+  which: (cmd) => Bun.which(cmd),
+  spawn: (cmd, opts) => Bun.spawn(cmd, opts),
+};
+
+export function spawnClaude(
+  sessionId: string,
+  projectPath: string,
+  deps: SpawnClaudeDeps = defaultDeps
+): SpawnClaudeResult {
+  const claudePath = deps.which("claude");
+
+  if (!claudePath) {
+    return {
+      success: false,
+      error: "Error: 'claude' command not found in PATH\nMake sure Claude Code is installed: npm install -g @anthropic-ai/claude-code",
+    };
+  }
+
+  const proc = deps.spawn([claudePath, "--resume", sessionId], {
+    cwd: projectPath,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  return { success: true, proc };
+}

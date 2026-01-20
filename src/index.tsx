@@ -2,7 +2,7 @@
 import { createCliRenderer, TextAttributes, type CliRenderer } from "@opentui/core";
 import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
 import { useState, useEffect } from "react";
-import { parseHistory, sessionsToOptions, type Session } from "./lib";
+import { parseHistory, sessionsToOptions, spawnClaude, type Session } from "./lib";
 
 // Store renderer reference for cleanup
 let globalRenderer: CliRenderer | null = null;
@@ -22,15 +22,14 @@ async function resumeSession(sessionId: string, projectPath: string) {
     globalRenderer.destroy();
   }
 
-  // Spawn claude directly in the project directory
-  const proc = Bun.spawn(["claude", "--resume", sessionId], {
-    cwd: projectPath,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const result = spawnClaude(sessionId, projectPath);
 
-  const exitCode = await proc.exited;
+  if (!result.success) {
+    console.error(result.error);
+    process.exit(1);
+  }
+
+  const exitCode = await result.proc.exited;
   process.exit(exitCode);
 }
 
