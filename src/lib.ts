@@ -52,16 +52,13 @@ export function parseSessionsFromDir(projectsDir: string): Session[] {
       const content = readFileSync(indexPath, "utf-8");
       const index: SessionIndex = JSON.parse(content);
 
-      // The cwd for resume is derived from folder name, not projectPath
-      const cwdPath = folderNameToPath(dir);
-
       for (const entry of index.entries) {
         sessions.push({
           id: entry.sessionId,
           title: entry.customTitle || entry.firstPrompt,
           firstMessage: entry.firstPrompt,
-          project: entry.projectPath, // Display the actual project path
-          cwd: cwdPath, // But use folder-derived path for resume
+          project: entry.projectPath,
+          cwd: entry.projectPath, // Use actual path, not folder-derived (hyphens in dir names break folderNameToPath)
           timestamp: new Date(entry.modified).getTime(),
           messageCount: entry.messageCount,
         });
@@ -127,6 +124,7 @@ export interface SpawnResult {
 export interface SpawnClaudeDeps {
   which: (cmd: string) => string | null;
   spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;
+  exists: (path: string) => boolean;
 }
 
 export type SpawnClaudeResult =
@@ -137,6 +135,7 @@ export type SpawnClaudeResult =
 const defaultDeps: SpawnClaudeDeps = {
   which: (cmd) => Bun.which(cmd),
   spawn: (cmd, opts) => Bun.spawn(cmd, opts),
+  exists: (path) => existsSync(path),
 };
 
 export function spawnClaude(
@@ -150,6 +149,13 @@ export function spawnClaude(
     return {
       success: false,
       error: "Error: 'claude' command not found in PATH\nMake sure Claude Code is installed: npm install -g @anthropic-ai/claude-code",
+    };
+  }
+
+  if (!deps.exists(projectPath)) {
+    return {
+      success: false,
+      error: `Error: Project directory no longer exists: ${projectPath}\nThe session was created in a directory that has been moved or deleted.`,
     };
   }
 

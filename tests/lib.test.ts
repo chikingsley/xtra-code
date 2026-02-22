@@ -271,14 +271,14 @@ describe("parseSessionsFromDir", () => {
     expect(session!.timestamp).toBe(new Date("2026-01-18T12:00:00Z").getTime());
   });
 
-  test("derives cwd from folder name, not projectPath", () => {
+  test("uses projectPath for cwd (folder name derivation breaks on hyphens)", () => {
     const sessions = parseSessionsFromDir(testDir);
     const session = sessions.find(s => s.id === "session-1");
 
     expect(session).toBeDefined();
-    // Folder is "-home-user-project-a", so cwd should be "/home/user/project/a"
-    expect(session!.cwd).toBe("/home/user/project/a");
-    // But project should still be the original projectPath
+    // cwd should use projectPath directly, not derive from folder name
+    // (folder derivation would turn "project-a" into "project/a")
+    expect(session!.cwd).toBe("/home/user/project-a");
     expect(session!.project).toBe("/home/user/project-a");
   });
 
@@ -303,6 +303,7 @@ describe("spawnClaude", () => {
       spawn: () => {
         throw new Error("should not be called");
       },
+      exists: () => true,
     };
 
     const result = spawnClaude("session-123", "/home/user/project", mockDeps);
@@ -311,6 +312,24 @@ describe("spawnClaude", () => {
     if (!result.success) {
       expect(result.error).toContain("claude");
       expect(result.error).toContain("not found");
+    }
+  });
+
+  test("returns error when project directory does not exist", () => {
+    const mockDeps: SpawnClaudeDeps = {
+      which: () => "/usr/local/bin/claude",
+      spawn: () => {
+        throw new Error("should not be called");
+      },
+      exists: () => false,
+    };
+
+    const result = spawnClaude("session-123", "/deleted/project", mockDeps);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain("/deleted/project");
+      expect(result.error).toContain("no longer exists");
     }
   });
 
@@ -325,6 +344,7 @@ describe("spawnClaude", () => {
         spawnedCwd = opts.cwd;
         return { exited: Promise.resolve(0) };
       },
+      exists: () => true,
     };
 
     const result = spawnClaude("session-abc", "/home/user/myproject", mockDeps);
@@ -347,6 +367,7 @@ describe("spawnClaude", () => {
         spawnedCmd = cmd;
         return { exited: Promise.resolve(0) };
       },
+      exists: () => true,
     };
 
     spawnClaude("sess", "/tmp", mockDeps);
@@ -358,6 +379,7 @@ describe("spawnClaude", () => {
     const mockDeps: SpawnClaudeDeps = {
       which: () => "/bin/claude",
       spawn: () => ({ exited: Promise.resolve(42) }),
+      exists: () => true,
     };
 
     const result = spawnClaude("sess", "/tmp", mockDeps);
